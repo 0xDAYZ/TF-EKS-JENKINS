@@ -1,5 +1,5 @@
 data "aws_ami" "main" {
-  owners   = ["amazon"]
+  owners = ["amazon"]
 
   filter {
     name   = "name"
