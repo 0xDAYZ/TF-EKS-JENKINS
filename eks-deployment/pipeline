@@ -64,7 +64,7 @@ pipeline {
             }
             steps {
                 script {
-                    dir('JenkinsServer/eks-cluster-2/') {
+                    dir('eks-deployment/') {
                         sh 'terraform init'
                     }
                     input(message: "Are you sure you want to proceed?", ok: "Proceed")
