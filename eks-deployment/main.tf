@@ -85,7 +85,7 @@ module "eks" {
 
   enable_cluster_creator_admin_permissions = true
   
-  self_managed_node_groups = {
+  eks_managed_node_groups = {
     example = {
       ami_type      = var.eks_node_ami
       instance_type = var.eks_node_instance_type
