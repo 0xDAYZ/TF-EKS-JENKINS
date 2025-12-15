@@ -1,81 +1,93 @@
 pipeline {
     agent any
 
-    environment {
-        AWS_ACCESS_KEY             = credentials('AWS_ACCESS_KEY')
-        AWS_SECRET_ACCESS_KEY      = credentials('AWS_SECRET_ACCESS_KEY')
-        AWS_DEFAULT_REGION         = 'us-east-1'
-
-        TF_VAR_region              = ''
-        TF_VAR_cluster_name        = ''
-        TF_VAR_eks_nodepool_min_size = ''
-        TF_VAR_eks_nodepool_max_size = ''
-        TF_VAR_eks_nodepool_desired_size = ''
+    parameters {
+        choice(
+            name: 'MODE',
+            choices: ['apply', 'destroy'],
+            description: 'Choose Terraform operation mode'
+        )
     }
 
-    parameters {
-        choice(name: 'MODE', choices: ['apply', 'destroy'], description: 'Choose Terraform operation mode')
+    environment {
+        AWS_ACCESS_KEY_ID     = credentials('AWS_ACCESS_KEY')
+        AWS_SECRET_ACCESS_KEY = credentials('AWS_SECRET_ACCESS_KEY')
+        AWS_DEFAULT_REGION    = 'us-east-1'
     }
 
     stages {
 
-        stage('Get Deployment Details') {
-            when { expression { params.MODE == 'apply' } }
+        stage('Checkout SCM') {
             steps {
-                script {
-                    def user_input = input(
-                        id: 'deployment-info',
-                        message: 'Please provide the deployment details for the cluster:',
-                        parameters: [
-                            string(name: 'CLUSTER_NAME', defaultValue: 'demo-cluster', description: 'Cluster name'),
-                            string(name: 'CLUSTER_REGION', defaultValue: 'us-east-1', description: 'AWS region'),
-                            string(name: 'CLUSTER_NODEPOOL_MIN_SIZE', defaultValue: '1', description: 'Min nodes'),
-                            string(name: 'CLUSTER_NODEPOOL_MAX_SIZE', defaultValue: '2', description: 'Max nodes'),
-                            string(name: 'CLUSTER_NODEPOOL_DESIRED_SIZE', defaultValue: '1', description: 'Desired nodes')
-                        ]
-                    )
-
-                    env.TF_VAR_region                 = user_input.CLUSTER_REGION
-                    env.TF_VAR_cluster_name           = user_input.CLUSTER_NAME
-                    env.TF_VAR_eks_nodepool_min_size  = user_input.CLUSTER_NODEPOOL_MIN_SIZE
-                    env.TF_VAR_eks_nodepool_max_size  = user_input.CLUSTER_NODEPOOL_MAX_SIZE
-                    env.TF_VAR_eks_nodepool_desired_size = user_input.CLUSTER_NODEPOOL_DESIRED_SIZE
-                }
+                checkout scmGit(
+                    branches: [[name: '*/main']],
+                    userRemoteConfigs: [[url: 'https://github.com/0xDAYZ/TF-EKS-JENKINS.git']]
+                )
             }
         }
 
-        stage('Checkout SCM') {
-            when { expression { params.MODE == 'apply' } }
+        stage('Get Deployment Details') {
+            when {
+                expression { params.MODE == 'apply' }
+            }
             steps {
                 script {
-                    checkout scmGit(branches: [[name: '*/main']], extensions: [], userRemoteConfigs: [[url: 'https://github.com/0xDAYZ/TF-EKS-JENKINS.git']])
+                    def userInput = input(
+                        message: 'Please provide the deployment details for the cluster:',
+                        parameters: [
+                            string(name: 'CLUSTER_NAME', defaultValue: 'demo-cluster'),
+                            string(name: 'CLUSTER_REGION', defaultValue: 'us-east-1'),
+                            string(name: 'CLUSTER_NODEPOOL_MIN_SIZE', defaultValue: '1'),
+                            string(name: 'CLUSTER_NODEPOOL_MAX_SIZE', defaultValue: '2'),
+                            string(name: 'CLUSTER_NODEPOOL_DESIRED_SIZE', defaultValue: '1')
+                        ]
+                    )
+
+                    env.TF_VAR_region                    = userInput.CLUSTER_REGION
+                    env.TF_VAR_cluster_name              = userInput.CLUSTER_NAME
+                    env.TF_VAR_eks_nodepool_min_size     = userInput.CLUSTER_NODEPOOL_MIN_SIZE
+                    env.TF_VAR_eks_nodepool_max_size     = userInput.CLUSTER_NODEPOOL_MAX_SIZE
+                    env.TF_VAR_eks_nodepool_desired_size = userInput.CLUSTER_NODEPOOL_DESIRED_SIZE
+                    env.AWS_DEFAULT_REGION               = userInput.CLUSTER_REGION
                 }
             }
         }
 
         stage('Initialize Terraform') {
-            when { expression { params.MODE == 'apply' } }
             steps {
-                dir('eks-deployment/') {
+                dir('eks-deployment') {
                     sh 'terraform init'
                 }
-                input(message: "Are you sure you want to proceed?", ok: "Proceed")
             }
         }
 
         stage('Validate Terraform') {
-            when { expression { params.MODE == 'apply' } }
+            when {
+                expression { params.MODE == 'apply' }
+            }
             steps {
-                dir('eks-deployment/') {
+                dir('eks-deployment') {
                     sh 'terraform validate'
                 }
             }
         }
 
+        stage('Terraform Plan') {
+            when {
+                expression { params.MODE == 'apply' }
+            }
+            steps {
+                dir('eks-deployment') {
+                    sh 'terraform plan'
+                }
+                input(message: 'Proceed with terraform apply?', ok: 'Apply')
+            }
+        }
+
         stage('Modify Infrastructure') {
             steps {
-                dir('eks-deployment/') {
-                    sh "terraform ${params.MODE} --auto-approve"
+                dir('eks-deployment') {
+                    sh "terraform ${params.MODE} -auto-approve"
                 }
             }
         }
